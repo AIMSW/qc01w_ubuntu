@@ -1,5 +1,5 @@
 #!/bin/bash
-#set -x
+set -x
 
 init_env()
 {
@@ -23,8 +23,8 @@ init_env()
   export QC01W_BOOT_FIRMWARE_SHA_URL=$QC01W_BOOT_FIRMWARE_BASE_URL/$QC01W_UBUNTU_VERSION/SHA256SUM
   export QC01W_BOOT_FIRMWARE_SHA=$(basename "$QC01W_BOOT_FIRMWARE_SHA_URL")
 
-  export DOWNLOAD_ISO=0
-  export CHECK_SHA=0
+  export DOWNLOAD_ISO=1
+  export CHECK_SHA=1
 
   export workfolder=.repack
   mkdir -p $workfolder
