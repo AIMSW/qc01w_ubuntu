@@ -1,43 +1,41 @@
 #!/bin/bash
-#set -x
+set -x
 
 init_env()
 {
-  export UBUNTU_ISO_URL=https://people.canonical.com/~platform/images/qualcomm-iot/ubuntu-24.04/ubuntu-24.04-x09/ubuntu-desktop-24.04/iot-qualcomm-dragonwing-classic-desktop-2404-x09-20260306.4096b.img.xz
+  export UBUNTU_BASE_URL=https://people.canonical.com/~platform/images/qualcomm-iot/ubuntu-24.04/ubuntu-24.04-x10/ubuntu-desktop-24.04
+  export UBUNTU_IMAGER_VERSION=iot-qualcomm-dragonwing-classic-desktop-2404-x10-20260403.4096b.img.xz
+
+  export QC01W_UBUNTU_VERSION=1071.79.qc01w
+
+  export UBUNTU_ISO_URL=$UBUNTU_BASE_URL/$UBUNTU_IMAGER_VERSION
   export UBUNTU_ISO=$(basename "$UBUNTU_ISO_URL")
   export UBUNTU_img="${UBUNTU_ISO%.xz}"
-
-  #export UBUNTU_manifest_URL=https://people.canonical.com/~platform/images/qualcomm-iot/ubuntu-24.04/ubuntu-24.04-x09/ubuntu-desktop-24.04/iot-qualcomm-dragonwing-classic-desktop-2404-x09-20260306.4096b.manifest
-  #export UBUNTU_manifest=$(basename "$UBUNTU_manifest_URL")
-  export UBUNTU_rawprogram0_URL=https://people.canonical.com/~platform/images/qualcomm-iot/ubuntu-24.04/ubuntu-24.04-x09/ubuntu-desktop-24.04/rawprogram0.xml
+  export UBUNTU_rawprogram0_URL=$UBUNTU_BASE_URL/rawprogram0.xml
   export UBUNTU_rawprogram0=$(basename "$UBUNTU_rawprogram0_URL")
-  #export UBUNTU_dtb_URL=https://people.canonical.com/~platform/images/qualcomm-iot/ubuntu-24.04/ubuntu-24.04-x09/ubuntu-desktop-24.04/dtb.bin
-  #export UBUNTU_dtb=$(basename "$UBUNTU_dtb_URL")
-  export UBUNTU_SHA_URL=https://people.canonical.com/~platform/images/qualcomm-iot/ubuntu-24.04/ubuntu-24.04-x09/ubuntu-desktop-24.04/SHA256SUMS
+  export UBUNTU_dtb_URL=$UBUNTU_BASE_URL/dtb.bin
+  export UBUNTU_dtb=$(basename "$UBUNTU_dtb_URL")
+  export UBUNTU_SHA_URL=$UBUNTU_BASE_URL/SHA256SUMS
   export UBUNTU_SHA=$(basename "$UBUNTU_SHA_URL")
-
-  export QC01W_UBUNTU_VERSION=1068.71.qc01w
 
   export QC01W_BOOT_FIRMWARE_BASE_URL=https://github.com/AIMSW/qc01w_boot_firmware/releases/download
   export QC01W_BOOT_FIRMWARE_URL=$QC01W_BOOT_FIRMWARE_BASE_URL/$QC01W_UBUNTU_VERSION/Release.tar.gz
   export QC01W_BOOT_FIRMWARE_SHA_URL=$QC01W_BOOT_FIRMWARE_BASE_URL/$QC01W_UBUNTU_VERSION/SHA256SUM
   export QC01W_BOOT_FIRMWARE_SHA=$(basename "$QC01W_BOOT_FIRMWARE_SHA_URL")
 
-  export DOWNLOAD_ISO=1
-  export CHECK_SHA=1
+  export DOWNLOAD_ISO=0
+  export CHECK_SHA=0
 
   export workfolder=.repack
   mkdir -p $workfolder
-
-  export rootfs_folder=$PWD/../../rootfs
-  export deb_folder=$PWD/../../rootfs/var/qc01w/deb
 
   export nhlos_bins_folder=
   export rootfs_folder=
   export dtb_folder=
   export script_folder=
 
-  export SUDOPW=
+  export rootfs_folder=$PWD/../../rootfs
+  export deb_folder=$PWD/../../rootfs/var/qc01w/deb
   export dev=
 }
 
@@ -59,61 +57,80 @@ download_file()
       echo download $local_file_name
       curl -LO $1
     else
-      if ! check_sha $local_file_name $2 && [ $CHECK_SHA == "1" ]; then
+      if [[ "$CHECK_SHA" == "1" ]] && ! check_sha "$local_file_name" "$2"; then
         echo "$local_file_name SHA fail, redownload"
         rm $local_file_name
         curl -LO $1
-     else
-       if [ "$CHECK_SHA" == "1" ]; then
-         echo "$local_file_name SHA pass"
-       else
-         echo "$local_file_name exists, but SHA was not checked"
-       fi
-       break;
-     fi
+      else
+        if [ "$CHECK_SHA" == "1" ]; then
+          echo "$local_file_name SHA pass"
+        else
+          echo "$local_file_name exists, but SHA was not checked"
+        fi
+        break;
+      fi
     fi
   done
 }
 
 download_boot_firmware()
 {
-  mkdir -p boot_firmware
-  pushd boot_firmware
+  echo "download_boot_firmware"
+
+  mkdir -p boot_firmware >/dev/null 2>&1
+  pushd boot_firmware >/dev/null 2>&1
 
   curl -LO $QC01W_BOOT_FIRMWARE_SHA_URL
 
   CHECK_SHA=1
   download_file $QC01W_BOOT_FIRMWARE_URL $QC01W_BOOT_FIRMWARE_SHA
 
-  tar zxvf $(basename "$QC01W_BOOT_FIRMWARE_URL")
+  tar zxvf $(basename "$QC01W_BOOT_FIRMWARE_URL") >/dev/null 2>&1
 
   nhlos_bins_folder=$PWD/Release/nhlos-bins
   rootfs_folder=$PWD/Release/rootfs
   dtb_folder=$PWD/Release/dtb
   script_folder=$PWD/Release/script
 
-  popd
+  popd >/dev/null 2>&1
 }
 
 download_ubuntu_iso()
 {
+  echo "download_ubuntu_img"
+
   if [ "$DOWNLOAD_ISO" == "1"  ]; then
     if [ "$CHECK_SHA" == "1" ]; then
+      echo "download_ubuntu_img_SHA"
       curl -O $UBUNTU_SHA_URL
+      sed -i '/build_info/d' SHA256SUMS
+      sed -i '/rawprogram0_emmc/d' SHA256SUMS
     fi
 
     download_file $UBUNTU_ISO_URL $UBUNTU_SHA
-    download_file $UBUNTU_manifest_URL $UBUNTU_SHA
     download_file $UBUNTU_rawprogram0_URL $UBUNTU_SHA
     download_file $UBUNTU_dtb_URL $UBUNTU_SHA
 
-    unxz -k $UBUNTU_ISO
+    # backup dtb cause we need a clean version during repack
+    cp $UBUNTU_dtb $UBUNTU_dtb.bak
+
+    echo "extract ubuntu image ....."
+    unxz -k $UBUNTU_ISO >/dev/null 2>&1
+
+    echo "Backup ISO Image for once..will take a while"
+    # backup for refreshing in mount_ubuntu_iso()
+    cp $UBUNTU_img $UBUNTU_img.bak
   fi
 }
 
 mount_ubuntu_iso()
 {
-  #echo $SUDOPW | sudo -S echo;
+  echo "mount_ubuntu_img...will take a while."
+
+  # refreshing the image
+  rm $UBUNTU_img
+  cp $UBUNTU_img.bak $UBUNTU_img
+
   export dev="$(sudo -S losetup --sector-size=4096 --find --show --partscan $UBUNTU_img)"
 
   sudo -S partprobe ${dev}
@@ -131,6 +148,8 @@ mount_ubuntu_iso()
 
 umount_ubuntu_iso()
 {
+  echo "umount_ubuntu_img"
+
   SEARCH_STRING="iot-qualcomm-dragonwing-classic"
 
   losetup --list --noheadings -O NAME,BACK-FILE | while read device backing_file; do
@@ -150,19 +169,26 @@ umount_ubuntu_iso()
   fi
 }
 
-patch_cmd_line()
+patch_file()
 {
-  echo "patch_cmd_line"
+  echo "patch_file"
 
   pushd mnt/etc/default/grub.d >/dev/null 2>&1
-  sudo -S cp 99-qcom-iot-defaults.cfg 99-qcom-iot-defaults.cfg_org
-  sudo -S sed -i 's|console=ttyMSM0,115200n8 |console=ttyMSM0,115200n8 dwc.pci=blacklist_bdf=0x208 firmware_class.path=\"/etc\" |' 99-qcom-iot-defaults.cfg
+  if [ ! -f "99-dragonwing-defaults.cfg.org" ]; then
+    sudo -S sed -i 's|console=ttyMSM0,115200n8 |console=ttyMSM0,115200n8 dwc.pci=blacklist_bdf=0x208 firmware_class.path=\"/etc\" |' 99-dragonwing-defaults.cfg
+    sudo -S cp 99-dragonwing-defaults.cfg 99-dragonwing-defaults.cfg.org
+  fi
   popd >/dev/null 2>&1
 
   pushd mnt/boot/grub >/dev/null 2>&1
-  sudo -S cp grub.cfg grub.cfg_org
-  sudo -S sed -i 's|console=ttyMSM0,115200n8 |console=ttyMSM0,115200n8 dwc.pci=blacklist_bdf=0x208 firmware_class.path=\"/etc\" |' grub.cfg
+  if [ ! -f "grub.cfg.org" ]; then
+    sudo -S sed -i 's|console=ttyMSM0,115200n8 |console=ttyMSM0,115200n8 dwc.pci=blacklist_bdf=0x208 firmware_class.path=\"/etc\" |' grub.cfg
+    sudo -S cp grub.cfg grub.cfg.org
+  fi
   popd >/dev/null 2>&1
+
+  #force to use xorg
+  sudo -S sed -i 's/#WaylandEnable=false/WaylandEnable=false/' mnt/etc/gdm3/custom.conf
 }
 
 cp_rootfs_into_iso()
@@ -170,47 +196,41 @@ cp_rootfs_into_iso()
   echo "cp_rootfs_into_iso"
 
   pushd mnt >/dev/null 2>&1
-  sudo rm var/qc01w/deb/linux-*.deb
+# no need to clean deb since we have a clean iso image during mount process
+  #sudo rm var/qc01w/deb/linux-*.deb
   sudo -S cp -r $rootfs_folder/* .
-
-  popd >/dev/null 2>&1
-}
-
-just_umount_iso()
-{
-  init_env
-  pushd $workfolder >/dev/null 2>&1
-
-  umount_ubuntu_iso
 
   popd >/dev/null 2>&1
 }
 
 gen_release()
 {
-  mkdir -p Release
-  pushd Release
-  
+  echo "gen_release"
+
+  mkdir -p Release >/dev/null 2>&1
+  pushd Release >/dev/null 2>&1
+
   cp -r $nhlos_bins_folder/* .
   cp -r $dtb_folder/* .
   cp -r $script_folder/* .
   cp ../$workfolder/$UBUNTU_img .
   cp ../$workfolder/$UBUNTU_rawprogram0 .
-  popd
+  popd >/dev/null 2>&1
 }
 
 repack_main()
 {
+  sudo echo "start repack"
+
   init_env
   pushd $workfolder >/dev/null 2>&1
-  sudo echo
 
   download_ubuntu_iso
   download_boot_firmware
 
   mount_ubuntu_iso
 
-  patch_cmd_line
+  patch_file
   #enable_service
   cp_rootfs_into_iso
 
@@ -219,8 +239,8 @@ repack_main()
   umount_ubuntu_iso
 
   popd >/dev/null 2>&1
-  
+
   gen_release
 }
 
-repack_main
+[[ -z "$1" ]] && repack_main
