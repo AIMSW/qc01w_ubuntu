@@ -23,8 +23,8 @@ init_env()
   export QC01W_BOOT_FIRMWARE_SHA_URL=$QC01W_BOOT_FIRMWARE_BASE_URL/$QC01W_UBUNTU_VERSION/SHA256SUM
   export QC01W_BOOT_FIRMWARE_SHA=$(basename "$QC01W_BOOT_FIRMWARE_SHA_URL")
 
-  export DOWNLOAD_ISO=0
-  export CHECK_SHA=0
+  export DOWNLOAD_ISO=1
+  export CHECK_SHA=1
 
   export workfolder=.repack
   mkdir -p $workfolder
@@ -57,6 +57,7 @@ download_file()
       echo download $local_file_name
       curl -LO $1
     else
+      echo "skip download $local_file_name"
       if [[ "$CHECK_SHA" == "1" ]] && ! check_sha "$local_file_name" "$2"; then
         echo "$local_file_name SHA fail, redownload"
         rm $local_file_name
@@ -83,10 +84,11 @@ download_boot_firmware()
   curl -LO $QC01W_BOOT_FIRMWARE_SHA_URL
 
   CHECK_SHA=1
+
   download_file $QC01W_BOOT_FIRMWARE_URL $QC01W_BOOT_FIRMWARE_SHA
-
-  tar zxvf $(basename "$QC01W_BOOT_FIRMWARE_URL") >/dev/null 2>&1
-
+  if [ ! -d Release ]; then
+    tar zxvf $(basename "$QC01W_BOOT_FIRMWARE_URL") >/dev/null 2>&1
+  fi
   nhlos_bins_folder=$PWD/Release/nhlos-bins
   rootfs_folder=$PWD/Release/rootfs
   dtb_folder=$PWD/Release/dtb
@@ -111,21 +113,23 @@ download_ubuntu_iso()
     download_file $UBUNTU_rawprogram0_URL $UBUNTU_SHA
     download_file $UBUNTU_dtb_URL $UBUNTU_SHA
 
-    # backup dtb cause we need a clean version during repack
-    cp $UBUNTU_dtb $UBUNTU_dtb.bak
+    if [ ! -f $UBUNTU_img.bak ]; then
+      # backup dtb cause we need a clean version during repack
+      cp $UBUNTU_dtb $UBUNTU_dtb.bak
 
-    echo "extract ubuntu image ....."
-    unxz -k $UBUNTU_ISO >/dev/null 2>&1
+      echo "extract ubuntu image ....."
+      unxz -k $UBUNTU_ISO >/dev/null 2>&1
 
-    echo "Backup ISO Image for once..will take a while"
-    # backup for refreshing in mount_ubuntu_iso()
-    cp $UBUNTU_img $UBUNTU_img.bak
+      echo "Backup ISO Image for once...will take a while"
+      # backup for refreshing in mount_ubuntu_iso()
+      cp $UBUNTU_img $UBUNTU_img.bak
+    fi
   fi
 }
 
 mount_ubuntu_iso()
 {
-  echo "mount_ubuntu_img...will take a while."
+  echo "refreshing iso image...will take a while."
 
   # refreshing the image
   rm $UBUNTU_img
