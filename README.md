@@ -6,7 +6,7 @@ A lightweight, automated script designed to generate full, flashable system imag
 
 ## 🚀 Features
 
-* **Essential Binaries download: Include NonHLOS and Ubuntu IOT ISO image.
+* **Essential Binaries download:** Include NonHLOS and Ubuntu IOT ISO image.
 * **Custom RootFS Support:** Seamlessly integrates custom root filesystems for QC01W hardware.
 * **Flash-Ready Output:** Generates a full image pack works with burn batch(_Burn_Image_AIBO.bat).
 
@@ -20,7 +20,7 @@ This toolchain utilizes a cross-platform deployment workflow: the image is **gen
 │  Ubuntu Host Machine    │               │  Windows Host Machine   │
 │                         │  Copy Image   │                         │
 │  1. Run script          │ ------------> │  1. Enter EDL mode      │
-│  2. Output full.img     │               │  2. Run *.bat to update │
+│  2. Output full IMG Pack│               │  2. Run *.bat to update │
 └─────────────────────────┘               └─────────────────────────┘
 
 ```
