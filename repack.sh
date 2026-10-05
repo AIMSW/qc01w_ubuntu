@@ -3,10 +3,10 @@
 
 init_env()
 {
-  export UBUNTU_BASE_URL=https://people.canonical.com/~platform/images/qualcomm-iot/ubuntu-24.04/ubuntu-24.04-x10/ubuntu-desktop-24.04
-  export UBUNTU_IMAGER_VERSION=iot-qualcomm-dragonwing-classic-desktop-2404-x10-20260403.4096b.img.xz
+  export UBUNTU_BASE_URL=https://people.canonical.com/~platform/images/qualcomm-iot/ubuntu-24.04/ubuntu-24.04-x13/ubuntu-desktop-24.04
+  export UBUNTU_IMAGER_VERSION=ubuntu-24.04-preinstalled-desktop-arm64+dragonwing-x13-20260710.img.xz
 
-  export QC01W_UBUNTU_VERSION=1071.79.qc01w
+  export QC01W_UBUNTU_VERSION=1080.89.qc01w
 
   export UBUNTU_ISO_URL=$UBUNTU_BASE_URL/$UBUNTU_IMAGER_VERSION
   export UBUNTU_ISO=$(basename "$UBUNTU_ISO_URL")
@@ -57,7 +57,6 @@ download_file()
       echo download $local_file_name
       curl -LO $1
     else
-      echo "skip download $local_file_name"
       if [[ "$CHECK_SHA" == "1" ]] && ! check_sha "$local_file_name" "$2"; then
         echo "$local_file_name SHA fail, redownload"
         rm $local_file_name
@@ -84,11 +83,10 @@ download_boot_firmware()
   curl -LO $QC01W_BOOT_FIRMWARE_SHA_URL
 
   CHECK_SHA=1
-
   download_file $QC01W_BOOT_FIRMWARE_URL $QC01W_BOOT_FIRMWARE_SHA
-  if [ ! -d Release ]; then
-    tar zxvf $(basename "$QC01W_BOOT_FIRMWARE_URL") >/dev/null 2>&1
-  fi
+
+  tar zxvf $(basename "$QC01W_BOOT_FIRMWARE_URL") >/dev/null 2>&1
+
   nhlos_bins_folder=$PWD/Release/nhlos-bins
   rootfs_folder=$PWD/Release/rootfs
   dtb_folder=$PWD/Release/dtb
@@ -113,23 +111,35 @@ download_ubuntu_iso()
     download_file $UBUNTU_rawprogram0_URL $UBUNTU_SHA
     download_file $UBUNTU_dtb_URL $UBUNTU_SHA
 
-    if [ ! -f $UBUNTU_img.bak ]; then
-      # backup dtb cause we need a clean version during repack
-      cp $UBUNTU_dtb $UBUNTU_dtb.bak
+    # backup dtb cause we need a clean version during repack
+    cp $UBUNTU_dtb $UBUNTU_dtb.bak
 
-      echo "extract ubuntu image ....."
-      unxz -k $UBUNTU_ISO >/dev/null 2>&1
+    echo "extract ubuntu image ....."
+    unxz -k $UBUNTU_ISO >/dev/null 2>&1
 
-      echo "Backup ISO Image for once...will take a while"
-      # backup for refreshing in mount_ubuntu_iso()
-      cp $UBUNTU_img $UBUNTU_img.bak
-    fi
+    echo "Backup ISO Image for once..will take a while"
+    # backup for refreshing in mount_ubuntu_iso()
+    cp $UBUNTU_img $UBUNTU_img.bak
   fi
+}
+
+backup_ubuntu_iso()
+{
+  echo "backup_ubuntu_iso"
+  # backup dtb cause we need a clean version during repack
+  cp $UBUNTU_dtb $UBUNTU_dtb.bak
+
+  echo "extract ubuntu image ....."
+  unxz -k $UBUNTU_ISO >/dev/null 2>&1
+
+  echo "Backup ISO Image for once..will take a while"
+  # backup for refreshing in mount_ubuntu_iso()
+  cp $UBUNTU_img $UBUNTU_img.bak
 }
 
 mount_ubuntu_iso()
 {
-  echo "refreshing iso image...will take a while."
+  echo "mount_ubuntu_img...will take a while."
 
   # refreshing the image
   rm $UBUNTU_img
@@ -154,7 +164,8 @@ umount_ubuntu_iso()
 {
   echo "umount_ubuntu_img"
 
-  SEARCH_STRING="iot-qualcomm-dragonwing-classic"
+  #SEARCH_STRING="iot-qualcomm-dragonwing-classic"
+  SEARCH_STRING="ubuntu-24.04-preinstalled"
 
   losetup --list --noheadings -O NAME,BACK-FILE | while read device backing_file; do
     if [[ "$backing_file" == *"$SEARCH_STRING"* ]]; then
@@ -180,6 +191,7 @@ patch_file()
   pushd mnt/etc/default/grub.d >/dev/null 2>&1
   if [ ! -f "99-dragonwing-defaults.cfg.org" ]; then
     sudo -S sed -i 's|console=ttyMSM0,115200n8 |console=ttyMSM0,115200n8 dwc.pci=blacklist_bdf=0x208 firmware_class.path=\"/etc\" |' 99-dragonwing-defaults.cfg
+    sudo -S sed -i 's|GRUB_TIMEOUT=3|GRUB_TIMEOUT=0|' 99-dragonwing-defaults.cfg
     sudo -S cp 99-dragonwing-defaults.cfg 99-dragonwing-defaults.cfg.org
   fi
   popd >/dev/null 2>&1
@@ -187,12 +199,33 @@ patch_file()
   pushd mnt/boot/grub >/dev/null 2>&1
   if [ ! -f "grub.cfg.org" ]; then
     sudo -S sed -i 's|console=ttyMSM0,115200n8 |console=ttyMSM0,115200n8 dwc.pci=blacklist_bdf=0x208 firmware_class.path=\"/etc\" |' grub.cfg
+    sudo -S sed -i 's|GRUB_TIMEOUT=3|GRUB_TIMEOUT=0|' grub.cfg
     sudo -S cp grub.cfg grub.cfg.org
   fi
   popd >/dev/null 2>&1
 
   #force to use xorg
-  sudo -S sed -i 's/#WaylandEnable=false/WaylandEnable=false/' mnt/etc/gdm3/custom.conf
+#  sudo -S sed -i 's/#WaylandEnable=false/WaylandEnable=false/' mnt/etc/gdm3/custom.conf
+}
+
+remove_ubuntu_source_lists()
+{
+  echo "remove_ubuntu_source_lists"
+
+  pushd mnt/etc/apt/sources.list.d > /dev/null 2>&1
+  sudo rm ubuntu-qcom-iot-ubuntu-qcom-ppa-noble.sources
+  popd >/dev/null 2>&1
+}
+
+gen_packages_gz_and_release()
+{
+  echo "generate Packages,Packages.gz and Release for private apt update server"
+
+  pushd $deb_folder
+  sudo dpkg-scanpackages . /dev/null > Packages
+  sudo dpkg-scanpackages . /dev/null | gzip -9c | sudo tee Packages.gz > /dev/null
+  sudo apt-ftparchive release . > Release
+  popd
 }
 
 cp_rootfs_into_iso()
@@ -229,7 +262,10 @@ repack_main()
   init_env
   pushd $workfolder >/dev/null 2>&1
 
-  download_ubuntu_iso
+  if [ ! -f "$UBUNTU_IMAGER_VERSION" ]; then
+    download_ubuntu_iso
+  fi
+
   download_boot_firmware
 
   mount_ubuntu_iso
