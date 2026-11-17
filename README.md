@@ -50,12 +50,9 @@ Execute the generation script
 Bash
 
 ```
-./repack.sh
+curl -L -o repack.sh https://github.com/AIMSW/qc01w_ubuntu/raw/refs/heads/main/repack.sh && chmod +x repack.sh && ./repack.sh
 ```
-or
-```bash
-./repack.sh 2>&1 | tee repack.log
-```
+
 ## 💡 Key Highlights
 
 > [!NOTICE]
